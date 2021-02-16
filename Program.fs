@@ -1,8 +1,9 @@
 open System
+open System.IO
 open System.Diagnostics
+open Microsoft.Win32
 open Argu
 
-[<NoAppSettings>]
 type CliArguments =
     | [<MainCommand; ExactlyOnce>] Search_Query of string
     | [<AltCommandLine("-w")>] W
@@ -14,6 +15,35 @@ type CliArguments =
             | W -> "open search in a new browser window."
             | I -> "open search in incognito mode."
             | Search_Query _ -> "search criteria."
+
+
+let getBrowserPath () =
+    let key = 
+        @"Software\Microsoft\Windows\shell\Associations\UrlAssociations\http\UserChoice"
+
+    use userKey = Registry.CurrentUser.OpenSubKey(key, false)
+    //if null, failwith access failed to registry
+    let progId = userKey.GetValue("Progid").ToString()
+
+    let browserExe =
+        match progId.ToLower() with
+        | p when p.Contains("chrome") -> "chrome.exe" 
+        | p when p.Contains("firefox") -> "firefox.exe" 
+        | p when p.Contains("safari") -> "safari.exe" 
+        | p when p.Contains("opera") -> "opera.exe" 
+        | _ -> failwith("Browser not supported")
+
+
+    let path = $"""{progId}\shell\open\command"""
+    use pathKey = 
+        Registry.ClassesRoot.OpenSubKey(path) 
+    //if null, failwith path to browser not found 
+
+    let browserDir = 
+        FileInfo(pathKey.GetValue( null ).ToString().ToLower().Replace( "\"", "" )).Directory.FullName
+
+    let browserPath = Path.Join(browserDir, browserExe)
+    browserPath
 
 [<EntryPoint>]
 let main argv =
@@ -33,13 +63,13 @@ let main argv =
         | q when not (q.StartsWith("http")) -> $""" {chromeArgs} "? {q}" """
         | q -> $"{chromeArgs} {q}"
 
+
+    let browserPath = getBrowserPath ()
     (*
         Todo: 
-            1. Find path of chrome insead of hardcoding 
-            2. Add support for multiple browsers
-            3. Automatically open in default browser
-            4. Add ability to get version number
+            1. Add ability to get version number
+            2. Adjust args for diff browsers
     *)
 
-    Process.Start(@"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe", final) |> ignore
+    Process.Start(browserPath, final) |> ignore
     0 // return an integer exit code
